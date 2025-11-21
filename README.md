@@ -1,57 +1,193 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# AlertBot - Silo Vault Liquidity Monitor
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+A monitoring bot that detects and alerts when liquidity becomes available in Silo Vaults, specifically designed to monitor for drained liquidity recovery following the Stream Finance incident.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Overview
 
-## Project Overview
+This bot continuously monitors Silo Vault contracts on Arbitrum, detecting when sufficient liquidity becomes available for withdrawal. It uses real-time event listening combined with periodic polling to ensure reliable detection and sends instant Telegram alerts when thresholds are met.
 
-This example project includes:
+## Features
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+- 🔔 **Real-time Event Detection** - Listens to USDC Transfer events for instant detection
+- ⏱️ **Periodic Polling** - Backup checks every 5 minutes (configurable)
+- 📱 **Telegram Alerts** - Sends formatted alerts to Telegram when liquidity threshold is met
+- 🎯 **Dual Detection Methods**:
+  - Primary: Checks `maxWithdraw(depositor)` for owner-aware withdrawal amounts
+  - Fallback: Checks raw USDC balance in vault
+- 🔄 **Auto-restart** - Designed for 24/7 operation with Railway or other cloud platforms
+- ⚙️ **Configurable** - All parameters via environment variables
 
-## Usage
+## Quick Start
 
-### Running Tests
+### Prerequisites
 
-To run all the tests in the project, execute the following command:
+- Node.js 20+
+- npm or yarn
+- Arbitrum RPC endpoint
+- Telegram bot token and chat ID
 
-```shell
-npx hardhat test
+### Installation
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd AlertBot
+
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.example .env  # Create your .env file
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+### Configuration
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
+Create a `.env` file with the following variables:
+
+```env
+# Required
+ARBITRUM_RPC=your_arbitrum_rpc_url
+VAULT=0x...your_vault_address
+USDC=0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+DEPOSITOR=0x...your_depositor_address
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
+
+# Optional (with defaults)
+TARGET_AMOUNT_DEC=8000          # Threshold in USDC (default: 8000)
+ASSET_DECIMALS=6                # USDC decimals (default: 6)
+POLL_INTERVAL_MS=300000         # Polling interval in ms (default: 5 minutes)
+SPAM_INTERVAL_SEC=10            # Repeat alert interval (default: 10 seconds)
+ONE_SHOT=false                  # Exit after first alert (default: false)
+WATCH_WALLET=                   # Optional wallet to monitor
 ```
 
-### Make a deployment to Sepolia
+### Run Locally
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+```bash
+npm start
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+### Run with Local Anvil Fork (for testing)
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+```bash
+# Terminal 1: Start Anvil with Arbitrum fork
+npm run anvil:fork
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
+# Terminal 2: Start bot connected to local node
+npm run start:local
 
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+# Terminal 3: Simulate whale transfer
+npm run test:fork
 ```
 
-After setting the variable, you can run the deployment with the Sepolia network:
+## Deployment
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+### Railway (Recommended)
+
+See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for detailed deployment instructions.
+
+Quick steps:
+
+1. Push code to GitHub
+2. Go to [railway.app](https://railway.app)
+3. New Project → Deploy from GitHub
+4. Add environment variables
+5. Deploy!
+
+### Other Options
+
+- **VPS**: See [DEPLOYMENT.md](./DEPLOYMENT.md) for VPS setup with PM2
+- **Docker**: Use the included `Dockerfile` and `docker-compose.yml`
+
+## How It Works
+
+1. **Event Listener** (Primary):
+
+   - Subscribes to USDC `Transfer` events
+   - Instantly detects when USDC is transferred to the vault
+   - Triggers immediate balance check and alert
+
+2. **Polling Loop** (Backup):
+
+   - Checks vault balance every 5 minutes (configurable)
+   - Ensures detection even if event listener fails
+   - Uses minimal RPC calls (~12 calls/hour)
+
+3. **Alert Logic**:
+   - Checks `maxWithdraw(depositor)` first (owner-aware)
+   - Falls back to raw vault balance if needed
+   - Sends Telegram alert when threshold is met
+   - Optionally repeats alerts at configured intervals
+
+## Testing
+
+### Unit Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run bot-specific tests
+npm run test:bot
 ```
+
+### End-to-End Testing
+
+See [test/E2E_TESTING.md](./test/E2E_TESTING.md) for complete E2E testing guide.
+
+## Project Structure
+
+```
+AlertBot/
+├── src/
+│   ├── bot.ts          # Main bot logic
+│   ├── config.ts       # Configuration loader
+│   └── utils.ts        # Utility functions
+├── scripts/
+│   ├── run.ts          # Entry point
+│   ├── test-bot-fork.ts    # E2E test script
+│   └── start-anvil-fork.ts # Anvil fork helper
+├── test/
+│   ├── bot.test.ts     # Bot tests (viem)
+│   └── Counter.ts      # Example tests
+├── contracts/          # Solidity contracts
+├── hardhat.config.ts   # Hardhat configuration
+├── Dockerfile         # Docker configuration
+└── RAILWAY_DEPLOYMENT.md  # Railway deployment guide
+```
+
+## Monitoring
+
+The bot logs important events:
+
+- `[bot] started. Poll interval: 300000 ms`
+- `[event] Transfer to vault: Transfer from 0x... → vault (15000 USDC)`
+- `[telegram] missing token/chat - ...` (if Telegram not configured)
+
+## Cost Optimization
+
+With 5-minute polling:
+
+- **RPC Calls**: ~12 calls/hour (~288/day)
+- **Cloud Costs**: ~$5-10/month on Railway
+- **Fits within**: Most free RPC tiers
+
+## Troubleshooting
+
+### Bot not detecting transfers
+
+- Verify `VAULT` address is correct
+- Check RPC endpoint is accessible
+- Ensure event listener is working (check logs)
+
+### No Telegram alerts
+
+- Verify `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set
+- Check bot has permission to send messages
+- Verify vault balance >= `TARGET_AMOUNT_DEC`
+
+### High RPC usage
+
+- Increase `POLL_INTERVAL_MS` (default: 5 minutes)
+- Event listener uses minimal calls (only on transfers)
