@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import {
   RPC,
   VAULT,
+  MARKET,
   USDC,
   DEPOSITOR,
   TARGET_AMOUNT_DEC,
@@ -60,6 +61,11 @@ export async function startBot() {
   let spamTimer: NodeJS.Timeout | null = null;
   let lastAlertAt = 0;
   let alerted = false;
+  let spamCount = 0;
+  let lastTransferAmount = "";
+  let lastTransferFrom = "";
+  let lastTransferTo = "";
+  const MAX_SPAM_COUNT = 5;
 
   async function checkAndNotify(source?: string) {
     try {
@@ -100,13 +106,25 @@ export async function startBot() {
     }
   }
 
-  async function sendAndSpam(message: string) {
+  async function sendAndSpam(
+    message: string,
+    transferAmount?: string,
+    transferFrom?: string,
+    transferTo?: string
+  ) {
     const now = Date.now();
     if (now - lastAlertAt < 2000 && alerted) return; // prevent immediate double-send
     lastAlertAt = now;
     alerted = true;
 
-    await sendTelegram(`*ALERT*\n${message}`);
+    // Store transfer details for spam reminders
+    if (transferAmount) {
+      lastTransferAmount = transferAmount;
+      lastTransferFrom = transferFrom || "";
+      lastTransferTo = transferTo || "";
+    }
+
+    await sendTelegram(message);
 
     if (ONE_SHOT) {
       console.log("[bot] ONE_SHOT set -> exiting after first alert");
@@ -115,28 +133,67 @@ export async function startBot() {
 
     // start spam timer if not already
     if (spamTimer) return;
+    spamCount = 0; // Reset spam counter when new alert triggers
     spamTimer = setInterval(async () => {
-      console.log("[bot] spam alert repeating...");
-      await sendTelegram(
-        `⏰ Reminder: liquidity >= ${TARGET_AMOUNT_DEC} USDC for vault ${VAULT}.`
+      spamCount++;
+      if (spamCount > MAX_SPAM_COUNT) {
+        console.log(
+          `[bot] Reached max spam count (${MAX_SPAM_COUNT}), stopping spam timer`
+        );
+        if (spamTimer) {
+          clearInterval(spamTimer);
+          spamTimer = null;
+        }
+        return;
+      }
+      console.log(
+        `[bot] spam alert repeating... (${spamCount}/${MAX_SPAM_COUNT})`
       );
+
+      // Include transfer amount in reminder if available
+      const reminderText = lastTransferAmount
+        ? `⏰ _Reminder_: Transfer detected - Amount: _${lastTransferAmount} USDC_ | From: \`${lastTransferFrom}\` | To: \`${lastTransferTo}\``
+        : `⏰ _Reminder_: Transfer detected for vault \`${VAULT}\` or market \`${
+            MARKET || "N/A"
+          }\`. Check for available liquidity.`;
+
+      await sendTelegram(reminderText);
     }, SPAM_INTERVAL_SEC * 1000);
   }
 
-  // watch USDC Transfer events to the vault (instant)
+  // watch USDC Transfer events to the market and vault (instant)
+  // Priority: Market first, then vault
+  // Sends alert immediately when transfer is detected
   usdc.on(
     "Transfer",
     async (from: string, to: string, value: bigint, evt: any) => {
       try {
-        if (to && to.toLowerCase() === VAULT.toLowerCase()) {
-          const human = toHuman(value, ASSET_DECIMALS);
+        const toLower = to?.toLowerCase();
+        const human = toHuman(value, ASSET_DECIMALS);
+
+        // Priority 1: Check if transfer is to market (checked first)
+        if (MARKET && toLower === MARKET.toLowerCase()) {
+          const source = `Transfer from ${from} → market (${human} USDC)`;
+          console.log("[event] Transfer to market:", source);
+
+          // Send alert immediately with transfer amount (with spam timer)
+          const alertText = `🚨 _Transfer Detected_ 🚨\nMarket Contract: \`${MARKET}\`\nAmount: _${human} USDC_\nFrom: \`${from}\`\nTrigger: Transfer event`;
+          await sendAndSpam(`_ALERT_\n${alertText}`, human, from, MARKET);
+          return; // Exit early if market transfer detected
+        }
+
+        // Priority 2: Check if transfer is to vault
+        if (toLower === VAULT.toLowerCase()) {
           const source = `Transfer from ${from} → vault (${human} USDC)`;
           console.log("[event] Transfer to vault:", source);
-          await checkAndNotify(source);
+
+          // Send alert immediately with transfer amount (with spam timer)
+          const alertText = `🚨 _Transfer Detected_ 🚨\nVault: \`${VAULT}\`\nAmount: _${human} USDC_\nFrom: \`${from}\`\nTrigger: Transfer event`;
+          await sendAndSpam(`_ALERT_\n${alertText}`, human, from, VAULT);
         }
-        // also watch specific wallet activity (to vault or general)
+
+        // also watch specific wallet activity (to vault/market or general)
         if (from && from.toLowerCase() === WATCH_WALLET.toLowerCase()) {
-          const human = toHuman(value, ASSET_DECIMALS);
           const text = `🔔 Wallet ${WATCH_WALLET} transferred ${human} USDC (from: ${from})`;
           await sendTelegram(text);
         }

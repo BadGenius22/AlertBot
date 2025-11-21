@@ -8,6 +8,7 @@ export const RPC =
     ? "http://127.0.0.1:8545"
     : process.env.ARBITRUM_RPC || "";
 export const VAULT = (process.env.VAULT || "").trim();
+export const MARKET = (process.env.MARKET || "").trim();
 export const USDC = (process.env.USDC || "").trim();
 export const DEPOSITOR = (process.env.DEPOSITOR || "").trim();
 

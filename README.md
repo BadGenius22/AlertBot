@@ -4,16 +4,15 @@ A monitoring bot that detects and alerts when liquidity becomes available in Sil
 
 ## Overview
 
-This bot continuously monitors Silo Vault contracts on Arbitrum, detecting when sufficient liquidity becomes available for withdrawal. It uses real-time event listening combined with periodic polling to ensure reliable detection and sends instant Telegram alerts when thresholds are met.
+This bot continuously monitors Silo Vault and Market contracts on Arbitrum, detecting USDC transfers in real-time. It sends instant Telegram alerts when transfers are detected, with priority given to market contract transfers. It also includes periodic polling as a backup mechanism.
 
 ## Features
 
 - 🔔 **Real-time Event Detection** - Listens to USDC Transfer events for instant detection
-- ⏱️ **Periodic Polling** - Backup checks every 5 minutes (configurable)
-- 📱 **Telegram Alerts** - Sends formatted alerts to Telegram when liquidity threshold is met
-- 🎯 **Dual Detection Methods**:
-  - Primary: Checks `maxWithdraw(depositor)` for owner-aware withdrawal amounts
-  - Fallback: Checks raw USDC balance in vault
+- 🎯 **Priority Monitoring** - Monitors market contract first, then vault contract
+- 📱 **Instant Alerts** - Sends Telegram alerts immediately when transfers are detected (shows amount, sender, recipient)
+- 🔁 **Spam Reminders** - Sends up to 5 reminder alerts at configurable intervals (default: 10 seconds)
+- ⏱️ **Periodic Polling** - Backup checks every 5 minutes (configurable) for liquidity thresholds
 - 🔄 **Auto-restart** - Designed for 24/7 operation with Railway or other cloud platforms
 - ⚙️ **Configurable** - All parameters via environment variables
 
@@ -48,6 +47,7 @@ Create a `.env` file with the following variables:
 # Required
 ARBITRUM_RPC=your_arbitrum_rpc_url
 VAULT=0x...your_vault_address
+MARKET=0xacb7432a4bb15402ce2afe0a7c9d5b738604f6f9  # Market contract address (optional)
 USDC=0xaf88d065e77c8cC2239327C5EDb3A432268e5831
 DEPOSITOR=0x...your_depositor_address
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -105,20 +105,23 @@ Quick steps:
 1. **Event Listener** (Primary):
 
    - Subscribes to USDC `Transfer` events
-   - Instantly detects when USDC is transferred to the vault
-   - Triggers immediate balance check and alert
+   - Instantly detects when USDC is transferred to market or vault contracts
+   - Priority: Market contract checked first, then vault
+   - Sends immediate Telegram alert with transfer details (amount, sender, recipient)
+   - Starts spam reminder timer (up to 5 reminders)
 
 2. **Polling Loop** (Backup):
 
-   - Checks vault balance every 5 minutes (configurable)
-   - Ensures detection even if event listener fails
+   - Checks vault liquidity every 5 minutes (configurable)
+   - Uses `maxWithdraw(depositor)` for owner-aware checks
+   - Falls back to raw vault balance if needed
+   - Sends alert when threshold is met (if not already alerted via events)
    - Uses minimal RPC calls (~12 calls/hour)
 
 3. **Alert Logic**:
-   - Checks `maxWithdraw(depositor)` first (owner-aware)
-   - Falls back to raw vault balance if needed
-   - Sends Telegram alert when threshold is met
-   - Optionally repeats alerts at configured intervals
+   - **Transfer Events**: Immediate alert with transfer amount, sender, and recipient
+   - **Spam Reminders**: Up to 5 reminder alerts at configured intervals (default: 10 seconds)
+   - **Polling Alerts**: Only if liquidity threshold is met and no recent transfer alerts
 
 ## Testing
 
@@ -162,7 +165,9 @@ AlertBot/
 The bot logs important events:
 
 - `[bot] started. Poll interval: 300000 ms`
+- `[event] Transfer to market: Transfer from 0x... → market (15000 USDC)`
 - `[event] Transfer to vault: Transfer from 0x... → vault (15000 USDC)`
+- `[bot] spam alert repeating... (1/5)`
 - `[telegram] missing token/chat - ...` (if Telegram not configured)
 
 ## Cost Optimization
@@ -177,15 +182,17 @@ With 5-minute polling:
 
 ### Bot not detecting transfers
 
-- Verify `VAULT` address is correct
+- Verify `VAULT` and/or `MARKET` addresses are correct
 - Check RPC endpoint is accessible
 - Ensure event listener is working (check logs)
+- Verify transfers are going to the monitored addresses
 
 ### No Telegram alerts
 
 - Verify `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set
 - Check bot has permission to send messages
-- Verify vault balance >= `TARGET_AMOUNT_DEC`
+- Note: Transfer events trigger immediate alerts (no threshold required)
+- For polling alerts: Verify vault balance >= `TARGET_AMOUNT_DEC`
 
 ### High RPC usage
 
