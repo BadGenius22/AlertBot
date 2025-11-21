@@ -1,0 +1,19 @@
+# docker-compose.yml
+# For easy local testing or cloud deployment
+version: "3.8"
+
+services:
+  alertbot:
+    build: .
+    container_name: alertbot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    # Uncomment if you add a health check endpoint
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
