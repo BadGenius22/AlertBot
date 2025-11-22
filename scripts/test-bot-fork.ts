@@ -13,7 +13,7 @@ const WHALE_ADDRESS = "0x35fd2113225fa9C6afB21268BAd915F3bEfa3d98";
 
 const HARDHAT_RPC = "http://127.0.0.1:8545";
 const VAULT = process.env.VAULT || "";
-const TRANSFER_AMOUNT = "15000"; // 15k USDC
+const TRANSFER_AMOUNT = "100"; // 15k USDC
 
 if (!VAULT) {
   console.error("Error: VAULT not set in .env");

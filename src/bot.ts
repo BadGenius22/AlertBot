@@ -163,13 +163,20 @@ export async function startBot() {
 
   // watch USDC Transfer events to the market and vault (instant)
   // Priority: Market first, then vault
-  // Sends alert immediately when transfer is detected
+  // Sends alert immediately when transfer is detected (only if amount > $10)
+  const MIN_TRANSFER_AMOUNT = ethers.parseUnits("10", ASSET_DECIMALS); // $10 USDC minimum
+
   usdc.on(
     "Transfer",
     async (from: string, to: string, value: bigint, evt: any) => {
       try {
         const toLower = to?.toLowerCase();
         const human = toHuman(value, ASSET_DECIMALS);
+
+        // Skip if transfer amount is <= $10
+        if (value <= MIN_TRANSFER_AMOUNT) {
+          return;
+        }
 
         // Priority 1: Check if transfer is to market (checked first)
         if (MARKET && toLower === MARKET.toLowerCase()) {
