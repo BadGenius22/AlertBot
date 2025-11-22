@@ -15,7 +15,7 @@ export const DEPOSITOR = (process.env.DEPOSITOR || "").trim();
 export const TARGET_AMOUNT_DEC = process.env.TARGET_AMOUNT_DEC || "8000";
 export const ASSET_DECIMALS = Number(process.env.ASSET_DECIMALS || "6");
 
-export const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 300000); // 5 minutes default
+export const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 3600000); // 1 hour default
 export const WATCH_WALLET = (process.env.WATCH_WALLET || "").trim();
 
 export const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
